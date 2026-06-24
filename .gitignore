@@ -1,0 +1,6 @@
+.build/
+dist/
+.DS_Store
+*.xcuserdata/
+Assets/AppIcon-chromakey.png
+Assets/AppIcon.iconset/
