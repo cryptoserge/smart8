@@ -19,6 +19,7 @@ public final class Smart7SessionStore: ObservableObject {
     }
     @Published public private(set) var savedRecipes: [Smart7Recipe]
     @Published public private(set) var selectedRecipeID: UUID
+    @Published public private(set) var defaultRecipeID: UUID
     @Published public var connectionStatus = "未接続"
     @Published public var codeInput = ""
     @Published public private(set) var isReady = false
@@ -30,6 +31,7 @@ public final class Smart7SessionStore: ObservableObject {
     @Published public private(set) var isDrainAvailable = false
     @Published public private(set) var isDraining = false
     @Published public private(set) var drainCountdownSeconds: Int?
+    @Published public private(set) var drainStartDelaySeconds = 5
     @Published public var errorMessage: String?
     @Published public private(set) var logs: [DiagnosticLogEntry] = []
 
@@ -38,14 +40,23 @@ public final class Smart7SessionStore: ObservableObject {
     #endif
     private var drainStartWorkItem: DispatchWorkItem?
     private var drainCountdownTimer: Timer?
-    private let recipeStorageKey = "Smart8.savedRecipes.v1"
+    private let recipeStorageKey = Smart7SessionStore.recipeStorageKey
+    private let defaultRecipeStorageKey = Smart7SessionStore.defaultRecipeStorageKey
+    private let drainStartDelayStorageKey = Smart7SessionStore.drainStartDelayStorageKey
+    private static let recipeStorageKey = "Smart8.savedRecipes.v1"
+    private static let defaultRecipeStorageKey = "Smart8.defaultRecipeID.v1"
+    private static let drainStartDelayStorageKey = "Smart8.drainStartDelaySeconds.v1"
+    private static let drainStartDelayRange = 0...30
 
     public init() {
         let loadedRecipes = Self.loadRecipes()
-        let initialRecipe = loadedRecipes.first ?? Smart7Recipe.kaoriSaku18g
+        let loadedDefaultID = Self.loadDefaultRecipeID()
+        let initialRecipe = loadedRecipes.first { $0.id == loadedDefaultID } ?? loadedRecipes.first ?? Smart7Recipe.kaoriSaku18g
         savedRecipes = loadedRecipes
         recipe = initialRecipe
         selectedRecipeID = initialRecipe.id
+        defaultRecipeID = loadedDefaultID ?? initialRecipe.id
+        drainStartDelaySeconds = Self.loadDrainStartDelaySeconds()
 
         #if canImport(CoreBluetooth)
         client.onEvent = { [weak self] event in
@@ -84,6 +95,10 @@ public final class Smart7SessionStore: ObservableObject {
         savedRecipes.count > 1
     }
 
+    public var isCurrentRecipeDefault: Bool {
+        recipe.id == defaultRecipeID
+    }
+
     public func selectRecipe(_ id: UUID) {
         guard let selected = savedRecipes.first(where: { $0.id == id }) else { return }
         recipe = selected
@@ -116,12 +131,31 @@ public final class Smart7SessionStore: ObservableObject {
 
     public func deleteCurrentRecipe() {
         guard canDeleteCurrentRecipe else { return }
+        let deletingDefault = recipe.id == defaultRecipeID
         savedRecipes.removeAll { $0.id == recipe.id }
         let next = savedRecipes.first ?? Smart7Recipe.kaoriSaku18g
         recipe = next
         selectedRecipeID = next.id
+        if deletingDefault {
+            defaultRecipeID = next.id
+            persistDefaultRecipe()
+        }
         persistRecipes()
         append(.init(direction: .event, message: "レシピを削除"))
+    }
+
+    public func setCurrentRecipeAsDefault() {
+        sanitizeCurrentRecipe()
+        if let index = savedRecipes.firstIndex(where: { $0.id == recipe.id }) {
+            savedRecipes[index] = recipe
+        } else {
+            savedRecipes.append(recipe)
+        }
+        selectedRecipeID = recipe.id
+        defaultRecipeID = recipe.id
+        persistRecipes()
+        persistDefaultRecipe()
+        append(.init(direction: .event, message: "既定レシピを設定: \(recipe.name)"))
     }
 
     public func resetRecipeToDefault() {
@@ -137,6 +171,11 @@ public final class Smart7SessionStore: ObservableObject {
     public func deleteStep(at index: Int) {
         guard recipe.steps.count > 1, recipe.steps.indices.contains(index) else { return }
         recipe.steps.remove(at: index)
+    }
+
+    public func setDrainStartDelaySeconds(_ seconds: Int) {
+        drainStartDelaySeconds = min(max(seconds, Self.drainStartDelayRange.lowerBound), Self.drainStartDelayRange.upperBound)
+        persistDrainStartDelaySeconds()
     }
 
     public func startScanning() {
@@ -275,10 +314,13 @@ public final class Smart7SessionStore: ObservableObject {
         errorMessage = nil
         isRecipeSending = false
         isBrewing = false
-        drainCountdownSeconds = 5
-        connectionStatus = "5秒後に排水開始"
-        append(.init(direction: .event, message: "排水開始を5秒後に予約"))
-        startDrainCountdownTimer()
+        let delaySeconds = drainStartDelaySeconds
+        if delaySeconds > 0 {
+            drainCountdownSeconds = delaySeconds
+            connectionStatus = "\(delaySeconds)秒後に排水開始"
+            append(.init(direction: .event, message: "排水開始を\(delaySeconds)秒後に予約"))
+            startDrainCountdownTimer()
+        }
 
         #if canImport(CoreBluetooth)
         let workItem = DispatchWorkItem { [weak self] in
@@ -300,7 +342,11 @@ public final class Smart7SessionStore: ObservableObject {
             }
         }
         drainStartWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(5), execute: workItem)
+        if delaySeconds > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delaySeconds), execute: workItem)
+        } else {
+            DispatchQueue.main.async(execute: workItem)
+        }
         #endif
     }
 
@@ -308,7 +354,7 @@ public final class Smart7SessionStore: ObservableObject {
         if drainCountdownSeconds != nil {
             cancelPendingDrainStart()
             connectionStatus = "排水開始をキャンセル"
-            append(.init(direction: .event, message: "5秒待機中の排水開始をキャンセル"))
+            append(.init(direction: .event, message: "待機中の排水開始をキャンセル"))
             return
         }
         guard isAuthenticated, isDraining else { return }
@@ -419,14 +465,36 @@ public final class Smart7SessionStore: ObservableObject {
         }
     }
 
+    private func persistDefaultRecipe() {
+        UserDefaults.standard.set(defaultRecipeID.uuidString, forKey: defaultRecipeStorageKey)
+    }
+
+    private func persistDrainStartDelaySeconds() {
+        UserDefaults.standard.set(drainStartDelaySeconds, forKey: drainStartDelayStorageKey)
+    }
+
     private static func loadRecipes() -> [Smart7Recipe] {
-        let key = "Smart8.savedRecipes.v1"
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard let data = UserDefaults.standard.data(forKey: recipeStorageKey),
               let decoded = try? JSONDecoder().decode([Smart7Recipe].self, from: data),
               !decoded.isEmpty else {
             return [Smart7Recipe.kaoriSaku18g]
         }
         return decoded
+    }
+
+    private static func loadDefaultRecipeID() -> UUID? {
+        guard let rawValue = UserDefaults.standard.string(forKey: defaultRecipeStorageKey) else {
+            return nil
+        }
+        return UUID(uuidString: rawValue)
+    }
+
+    private static func loadDrainStartDelaySeconds() -> Int {
+        guard UserDefaults.standard.object(forKey: drainStartDelayStorageKey) != nil else {
+            return 5
+        }
+        let savedValue = UserDefaults.standard.integer(forKey: drainStartDelayStorageKey)
+        return min(max(savedValue, drainStartDelayRange.lowerBound), drainStartDelayRange.upperBound)
     }
 
     private func nextRecipeName(base: String) -> String {

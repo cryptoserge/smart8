@@ -1,306 +1,826 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct ContentView: View {
     @ObservedObject var store: Smart7SessionStore
+    @AppStorage("Smart8.language") private var languageRawValue = Smart8Language.japanese.rawValue
     @State private var showingDiagnostics = false
+    @State private var isEditingRecipe = false
+
+    private var copy: Smart8Copy {
+        Smart8Copy(language: Smart8Language(rawValue: languageRawValue) ?? .japanese)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderView(store: store)
+            HeaderView(store: store, showingDiagnostics: $showingDiagnostics)
             Divider()
             HSplitView {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ConnectionPanel(store: store)
-                        RecipePanel(store: store)
-                        BrewPanel(store: store)
-                        DrainPanel(store: store)
-                    }
-                    .padding(18)
+                    MainBrewDashboard(store: store, isEditingRecipe: $isEditingRecipe)
+                        .padding(24)
                 }
-                .frame(minWidth: 460)
+                .frame(minWidth: 580)
+                .background(Smart8Palette.page)
+
+                SidePanel(store: store, showingDiagnostics: $showingDiagnostics)
+                    .frame(minWidth: 320, idealWidth: 360, maxWidth: 420)
+                    .background(Smart8Palette.side)
 
                 if showingDiagnostics {
                     LogPanel(logs: store.logs)
-                        .frame(minWidth: 420)
+                        .frame(minWidth: 420, idealWidth: 480)
+                        .background(Smart8Palette.side)
                 }
             }
-            Divider()
-            HStack {
-                Spacer()
-                Button {
-                    showingDiagnostics.toggle()
-                } label: {
-                    Label(showingDiagnostics ? "診断ログを隠す" : "診断ログを表示", systemImage: showingDiagnostics ? "sidebar.right" : "list.bullet.rectangle")
-                }
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
+            FooterStatusView(store: store)
         }
+        .background(Smart8Palette.page)
         .onDisappear {
             store.prepareForExit()
         }
+        .environment(\.smart8Copy, copy)
     }
+}
+
+private enum Smart8Palette {
+    static let page = Color(red: 0.925, green: 0.915, blue: 0.890)
+    static let side = Color(red: 0.900, green: 0.890, blue: 0.865)
+    static let surface = Color(red: 0.955, green: 0.950, blue: 0.935)
+    static let line = Color.primary.opacity(0.13)
+    static let accent = Color(red: 0.50, green: 0.39, blue: 0.25)
+    static let accentSoft = Color(red: 0.76, green: 0.68, blue: 0.54)
+    static let blue = Color(red: 0.20, green: 0.36, blue: 0.55)
+    static let green = Color(red: 0.22, green: 0.46, blue: 0.32)
+    static let danger = Color(red: 0.66, green: 0.26, blue: 0.22)
 }
 
 private struct HeaderView: View {
     @ObservedObject var store: Smart7SessionStore
+    @Binding var showingDiagnostics: Bool
+    @AppStorage("Smart8.language") private var languageRawValue = Smart8Language.japanese.rawValue
+    @Environment(\.smart8Copy) private var copy
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: "cup.and.saucer.fill")
                 .font(.title2)
+                .foregroundStyle(Smart8Palette.accent)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Smart8")
                     .font(.headline)
-                Text(store.connectionStatus)
+                Text(copy.connectionStatus(store.connectionStatus))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+
+            StatusPill(
+                title: store.isAuthenticated ? copy.authenticated : copy.unauthenticated,
+                systemImage: store.isAuthenticated ? "checkmark.shield.fill" : "shield",
+                color: store.isAuthenticated ? Smart8Palette.green : .secondary
+            )
+
             Spacer()
+
             if let error = store.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .font(.subheadline)
+                    .foregroundStyle(Smart8Palette.danger)
                     .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Smart8Palette.danger.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            Picker(copy.languageLabel, selection: $languageRawValue) {
+                ForEach(Smart8Language.allCases) { language in
+                    Text(language.displayName).tag(language.rawValue)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 110)
+
+            Button {
+                showingDiagnostics.toggle()
+            } label: {
+                Label(showingDiagnostics ? copy.hideDiagnostics : copy.showDiagnostics, systemImage: "waveform.path.ecg")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
+        .background(.regularMaterial)
     }
 }
 
-private struct ConnectionPanel: View {
+private struct MainBrewDashboard: View {
     @ObservedObject var store: Smart7SessionStore
+    @Binding var isEditingRecipe: Bool
 
     var body: some View {
-        GroupBox("接続") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
+        VStack(alignment: .leading, spacing: 22) {
+            RecipeHeroView(store: store, isEditingRecipe: $isEditingRecipe)
+            MetricGrid(recipe: store.recipe)
+            PourPlanView(recipe: store.recipe)
+
+            if isEditingRecipe {
+                RecipeEditorPanel(store: store, isEditingRecipe: $isEditingRecipe)
+            }
+
+            BrewActionPanel(store: store)
+        }
+        .frame(maxWidth: 980, alignment: .leading)
+    }
+}
+
+private struct RecipeHeroView: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Binding var isEditingRecipe: Bool
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 22) {
+                HeroDripperArt()
+                    .frame(width: 132, height: 118)
+                    .frame(width: 144, height: 128)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(store.recipe.name)
+                            .font(.system(size: 34, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                        Spacer()
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                isEditingRecipe.toggle()
+                            }
+                        } label: {
+                            Label(isEditingRecipe ? copy.closeEdit : copy.edit, systemImage: isEditingRecipe ? "xmark" : "pencil")
+                        }
+                    }
+
+                    Text(copy.recipeDescription)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 10) {
+                        Picker(copy.recipe, selection: Binding(
+                            get: { store.selectedRecipeID },
+                            set: { store.selectRecipe($0) }
+                        )) {
+                            ForEach(store.savedRecipes) { recipe in
+                                Text(recipe.name).tag(recipe.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 240)
+
+                        if store.isCurrentRecipeDefault {
+                            StatusPill(title: copy.defaultRecipe, systemImage: "star.fill", color: Smart8Palette.accent)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(22)
+        .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Smart8Palette.line)
+        )
+    }
+}
+
+private struct HeroDripperArt: View {
+    var body: some View {
+        #if canImport(AppKit)
+        if let url = Bundle.main.url(forResource: "HeroDripper", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: "mug.fill")
+                .font(.system(size: 54, weight: .regular))
+                .foregroundStyle(Smart8Palette.accent)
+        }
+        #else
+        Image(systemName: "mug.fill")
+            .font(.system(size: 54, weight: .regular))
+            .foregroundStyle(Smart8Palette.accent)
+        #endif
+    }
+}
+
+private struct MetricGrid: View {
+    let recipe: Smart7Recipe
+    @Environment(\.smart8Copy) private var copy
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 220), spacing: 14)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 14) {
+            MetricCard(title: copy.temperature, value: "\(recipe.temperatureCelsius)", unit: "℃", assetName: "MetricTemperature", fallbackSystemImage: "thermometer", color: Smart8Palette.accent)
+            MetricCard(title: copy.coffeeAmount, value: "\(recipe.coffeeGrams)", unit: "g", assetName: "MetricPowder", fallbackSystemImage: "scalemass.fill", color: Color(red: 0.46, green: 0.30, blue: 0.18))
+            MetricCard(title: copy.totalWater, value: "\(recipe.totalWaterML)", unit: "ml", assetName: "MetricWater", fallbackSystemImage: "drop.fill", color: Smart8Palette.blue)
+            MetricCard(title: copy.pourCount, value: "\(recipe.steps.count)", unit: copy.language == .japanese ? "回" : "", assetName: "MetricPours", fallbackSystemImage: "water.waves", color: .secondary)
+        }
+    }
+}
+
+private struct MetricCard: View {
+    let title: String
+    let value: String
+    let unit: String
+    let assetName: String
+    let fallbackSystemImage: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 14) {
+            DashboardIcon(assetName: assetName, fallbackSystemImage: fallbackSystemImage, color: color)
+                .frame(width: 46, height: 46)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(value)
+                        .font(.system(size: 28, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(unit)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(minHeight: 108)
+        .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Smart8Palette.line)
+        )
+    }
+}
+
+private struct DashboardIcon: View {
+    let assetName: String
+    let fallbackSystemImage: String
+    let color: Color
+
+    var body: some View {
+        #if canImport(AppKit)
+        if let url = Bundle.main.url(forResource: assetName, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: fallbackSystemImage)
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(color)
+        }
+        #else
+        Image(systemName: fallbackSystemImage)
+            .font(.system(size: 30, weight: .medium))
+            .foregroundStyle(color)
+        #endif
+    }
+}
+
+private struct PourPlanView: View {
+    let recipe: Smart7Recipe
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(copy.pourPlan)
+                    .font(.headline)
+                Text(copy.stepsCount(recipe.steps.count))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
+                    PourRow(index: index, step: step)
+                    if index < recipe.steps.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Smart8Palette.line)
+            )
+        }
+    }
+}
+
+private struct PourRow: View {
+    let index: Int
+    let step: Smart7RecipeStep
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Text("\(index + 1)")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Smart8Palette.accent.opacity(0.70), in: Circle())
+
+            Text(copy.stepName(index + 1))
+                .font(.headline)
+                .frame(width: 86, alignment: .leading)
+
+            PlanValue(systemImage: "drop", text: "\(step.volumeML) ml", color: Smart8Palette.blue)
+            PlanValue(systemImage: "timer", text: copy.seconds(step.pourSeconds), color: Smart8Palette.blue)
+            PlanValue(systemImage: "hourglass", text: copy.waitSeconds(step.intervalSeconds), color: Smart8Palette.accent)
+
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+    }
+}
+
+private struct PlanValue: View {
+    let systemImage: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.body)
+            .foregroundStyle(.primary)
+            .labelStyle(CompactLabelStyle(color: color))
+            .frame(minWidth: 122, alignment: .leading)
+    }
+}
+
+private struct BrewActionPanel: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                Button {
+                    store.startRecipe()
+                } label: {
+                    Label(copy.startBrewing, systemImage: "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .background(store.canStartRecipe ? Smart8Palette.accent : Color.secondary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                .disabled(!store.canStartRecipe)
+
+                Button {
+                    store.stopBrewing()
+                } label: {
+                    Label(copy.stopBrewing, systemImage: "stop.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 210)
+                        .padding(.vertical, 15)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(store.isAuthenticated && (store.isBrewing || store.isRecipeSending) ? .primary : .secondary)
+                .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Smart8Palette.line)
+                )
+                .disabled(!store.isAuthenticated || (!store.isBrewing && !store.isRecipeSending))
+            }
+        }
+    }
+}
+
+private struct RecipeEditorPanel: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Binding var isEditingRecipe: Bool
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text(copy.recipeEditor)
+                    .font(.headline)
+                Spacer()
+                Button {
+                    store.saveRecipe()
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isEditingRecipe = false
+                    }
+                } label: {
+                    Label(copy.saveAndClose, systemImage: "checkmark")
+                }
+            }
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                GridRow {
+                    Text(copy.name).foregroundStyle(.secondary)
+                    TextField(copy.recipeNamePlaceholder, text: $store.recipe.name)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 260)
+                    Text(copy.temperature).foregroundStyle(.secondary)
+                    Stepper(value: $store.recipe.temperatureCelsius, in: 80...96) {
+                        Text("\(store.recipe.temperatureCelsius) ℃")
+                            .frame(width: 72, alignment: .leading)
+                    }
+                }
+                GridRow {
+                    Text(copy.coffeeAmount).foregroundStyle(.secondary)
+                    Stepper(value: $store.recipe.coffeeGrams, in: 1...60) {
+                        Text("\(store.recipe.coffeeGrams) g")
+                            .frame(width: 72, alignment: .leading)
+                    }
+                    Text(copy.totalWater).foregroundStyle(.secondary)
+                    Text("\(store.recipe.totalWaterML) ml")
+                        .font(.headline)
+                }
+            }
+
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                GridRow {
+                    Text(copy.step).foregroundStyle(.secondary)
+                    Text(copy.waterAmount).foregroundStyle(.secondary)
+                    Text(copy.pour).foregroundStyle(.secondary)
+                    Text(copy.wait).foregroundStyle(.secondary)
+                    Text("")
+                }
+                ForEach(store.recipe.steps.indices, id: \.self) { index in
+                    GridRow {
+                        Text(copy.stepName(index + 1))
+                        Stepper(value: $store.recipe.steps[index].volumeML, in: 10...500, step: 10) {
+                            Text("\(store.recipe.steps[index].volumeML) ml")
+                                .frame(width: 70, alignment: .leading)
+                        }
+                        Stepper(value: $store.recipe.steps[index].pourSeconds, in: 0...255) {
+                            Text(copy.seconds(store.recipe.steps[index].pourSeconds))
+                                .frame(width: 56, alignment: .leading)
+                        }
+                        Stepper(value: $store.recipe.steps[index].intervalSeconds, in: 0...255) {
+                            Text(copy.seconds(store.recipe.steps[index].intervalSeconds))
+                                .frame(width: 56, alignment: .leading)
+                        }
+                        Button {
+                            store.deleteStep(at: index)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(store.recipe.steps.count <= 1)
+                    }
+                }
+            }
+            .font(.system(.body, design: .monospaced))
+
+            HStack {
+                Button {
+                    store.addStep()
+                } label: {
+                    Label(copy.addStep, systemImage: "plus.circle")
+                }
+                .disabled(store.recipe.steps.count >= 8)
+
+                Spacer()
+
+                Button {
+                    store.setCurrentRecipeAsDefault()
+                } label: {
+                    Label(store.isCurrentRecipeDefault ? copy.currentDefaultRecipe : copy.setDefaultRecipe, systemImage: "star.fill")
+                }
+                .disabled(store.isCurrentRecipeDefault)
+
+                Button {
+                    store.duplicateRecipe()
+                } label: {
+                    Label(copy.add, systemImage: "plus")
+                }
+
+                Button {
+                    store.deleteCurrentRecipe()
+                } label: {
+                    Label(copy.delete, systemImage: "trash")
+                }
+                .disabled(!store.canDeleteCurrentRecipe)
+
+                Button {
+                    store.resetRecipeToDefault()
+                } label: {
+                    Label(copy.reset, systemImage: "arrow.counterclockwise")
+                }
+            }
+        }
+        .padding(18)
+        .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Smart8Palette.line)
+        )
+    }
+}
+
+private struct SidePanel: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Binding var showingDiagnostics: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                DeviceCard(store: store)
+                DrainControlCard(store: store)
+                DiagnosticsCard(showingDiagnostics: $showingDiagnostics)
+            }
+            .padding(24)
+        }
+    }
+}
+
+private struct DeviceCard: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(copy.device)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: store.isAuthenticated ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(store.isAuthenticated ? Smart8Palette.green : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("EVS-70")
+                            .font(.title3.bold())
+                        Text("HARIO Smart7 EVS-70")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "cellularbars")
+                        .font(.title3)
+                        .foregroundStyle(store.hasDiscoveredDevice ? .primary : .secondary)
+                }
+
+                StatusLine(systemImage: "dot.radiowaves.left.and.right", text: store.hasDiscoveredDevice ? copy.foundEVS70 : copy.notSearched, color: store.hasDiscoveredDevice ? Smart8Palette.blue : .secondary)
+                StatusLine(systemImage: "bolt.horizontal.circle", text: store.isReady ? copy.notificationsEnabled : copy.waiting, color: store.isReady ? Smart8Palette.green : .secondary)
+                StatusLine(systemImage: "checkmark.shield", text: store.isAuthenticated ? copy.authenticated : copy.unauthenticated, color: store.isAuthenticated ? Smart8Palette.green : .secondary)
+
+                Divider()
+
+                VStack(spacing: 8) {
                     Button {
                         store.startScanning()
                     } label: {
-                        Label("EVS-70を検索", systemImage: "dot.radiowaves.left.and.right")
+                        Label(copy.searchEVS70, systemImage: "dot.radiowaves.left.and.right")
+                            .frame(maxWidth: .infinity)
                     }
 
                     Button {
                         store.connectDiscoveredDevice()
                     } label: {
-                        Label("発見したEVS-70に接続", systemImage: "link")
+                        Label(copy.connectFoundEVS70, systemImage: "link")
+                            .frame(maxWidth: .infinity)
                     }
                     .disabled(!store.hasDiscoveredDevice || store.isReady)
 
-                    Button {
-                        store.disconnect()
-                    } label: {
-                        Label("切断", systemImage: "xmark.circle")
+                    HStack {
+                        Button {
+                            store.requestStatus()
+                        } label: {
+                            Label(copy.requestStatus, systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .disabled(!store.isAuthenticated)
+
+                        Button {
+                            store.disconnect()
+                        } label: {
+                            Label(copy.disconnect, systemImage: "xmark.circle")
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                 }
-
-                Button {
-                    store.requestStatus()
-                } label: {
-                    Label("状態問い合わせ", systemImage: "arrow.clockwise")
-                }
-                .disabled(!store.isAuthenticated)
             }
-            .padding(.vertical, 6)
+            .padding(18)
+            .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Smart8Palette.line)
+            )
         }
     }
 }
 
-private struct RecipePanel: View {
+private struct DrainControlCard: View {
     @ObservedObject var store: Smart7SessionStore
+    @Environment(\.smart8Copy) private var copy
 
     var body: some View {
-        GroupBox("レシピ") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Picker("選択", selection: Binding(
-                        get: { store.selectedRecipeID },
-                        set: { store.selectRecipe($0) }
-                    )) {
-                        ForEach(store.savedRecipes) { recipe in
-                            Text(recipe.name).tag(recipe.id)
-                        }
-                    }
-                    .frame(maxWidth: 260)
+        VStack(alignment: .leading, spacing: 16) {
+            Text(copy.controls)
+                .font(.headline)
 
-                    Button {
-                        store.saveRecipe()
-                    } label: {
-                        Label("保存", systemImage: "square.and.arrow.down")
+            VStack(alignment: .leading, spacing: 14) {
+                Button {
+                    store.startDrain()
+                } label: {
+                    HStack {
+                        Label(copy.drainWater, systemImage: "drop.fill")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-
-                    Button {
-                        store.duplicateRecipe()
-                    } label: {
-                        Label("追加", systemImage: "plus")
-                    }
-
-                    Button {
-                        store.deleteCurrentRecipe()
-                    } label: {
-                        Label("削除", systemImage: "trash")
-                    }
-                    .disabled(!store.canDeleteCurrentRecipe)
-
-                    Button {
-                        store.resetRecipeToDefault()
-                    } label: {
-                        Label("初期値", systemImage: "arrow.counterclockwise")
-                    }
+                    .frame(maxWidth: .infinity)
                 }
+                .disabled(!store.canStartDrain)
 
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-                    GridRow {
-                        Text("名前").foregroundStyle(.secondary)
-                        TextField("レシピ名", text: $store.recipe.name)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 220)
-                        Text("湯温").foregroundStyle(.secondary)
-                        Stepper(value: $store.recipe.temperatureCelsius, in: 80...96) {
-                            Text("\(store.recipe.temperatureCelsius) ℃")
-                                .frame(width: 64, alignment: .leading)
-                        }
-                    }
-                    GridRow {
-                        Text("粉量").foregroundStyle(.secondary)
-                        Stepper(value: $store.recipe.coffeeGrams, in: 1...60) {
-                            Text("\(store.recipe.coffeeGrams) g")
-                                .frame(width: 64, alignment: .leading)
-                        }
-                        Text("総湯量").foregroundStyle(.secondary)
-                        Text("\(store.recipe.totalWaterML) ml")
+                Stepper(
+                    value: Binding(
+                        get: { store.drainStartDelaySeconds },
+                        set: { store.setDrainStartDelaySeconds($0) }
+                    ),
+                    in: 0...30
+                ) {
+                    HStack {
+                        Text(copy.startAfter)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(copy.seconds(store.drainStartDelaySeconds))
                             .font(.headline)
                     }
                 }
-
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-                    GridRow {
-                        Text("工程").foregroundStyle(.secondary)
-                        Text("湯量").foregroundStyle(.secondary)
-                        Text("注湯").foregroundStyle(.secondary)
-                        Text("待機").foregroundStyle(.secondary)
-                        Text("")
-                    }
-                    ForEach(store.recipe.steps.indices, id: \.self) { index in
-                        GridRow {
-                            Text("\(index + 1)投目")
-                            Stepper(value: $store.recipe.steps[index].volumeML, in: 10...500, step: 10) {
-                                Text("\(store.recipe.steps[index].volumeML) ml")
-                                    .frame(width: 70, alignment: .leading)
-                            }
-                            Stepper(value: $store.recipe.steps[index].pourSeconds, in: 0...255) {
-                                Text("\(store.recipe.steps[index].pourSeconds)秒")
-                                    .frame(width: 52, alignment: .leading)
-                            }
-                            Stepper(value: $store.recipe.steps[index].intervalSeconds, in: 0...255) {
-                                Text("\(store.recipe.steps[index].intervalSeconds)秒")
-                                    .frame(width: 52, alignment: .leading)
-                            }
-                            Button {
-                                store.deleteStep(at: index)
-                            } label: {
-                                Image(systemName: "minus.circle")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(store.recipe.steps.count <= 1)
-                        }
-                    }
-                }
-                .font(.system(.body, design: .monospaced))
-
-                Button {
-                    store.addStep()
-                } label: {
-                    Label("工程を追加", systemImage: "plus.circle")
-                }
-                .disabled(store.recipe.steps.count >= 8)
-            }
-            .padding(.vertical, 6)
-        }
-    }
-}
-
-private struct BrewPanel: View {
-    @ObservedObject var store: Smart7SessionStore
-
-    var body: some View {
-        GroupBox("抽出") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Button {
-                        store.startRecipe()
-                    } label: {
-                        Label("この内容で抽出開始", systemImage: "play.fill")
-                    }
-                    .disabled(!store.canStartRecipe)
-
-                    Button {
-                        store.stopBrewing()
-                    } label: {
-                        Label("抽出停止", systemImage: "stop.fill")
-                    }
-                    .disabled(!store.isAuthenticated || (!store.isBrewing && !store.isRecipeSending))
-                }
-
-                Button {
-                    store.markBrewFinishedByUser()
-                } label: {
-                    Label("抽出が終わったので排水へ", systemImage: "checkmark.circle")
-                }
-                .disabled(!store.isBrewing)
-            }
-            .padding(.vertical, 6)
-        }
-    }
-}
-
-private struct DrainPanel: View {
-    @ObservedObject var store: Smart7SessionStore
-
-    var body: some View {
-        GroupBox("残水排出") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Button {
-                        store.startDrain()
-                    } label: {
-                        Label("残水を排出する", systemImage: "drop.fill")
-                    }
-                    .disabled(!store.canStartDrain)
-
-                    Button {
-                        store.stopDrain()
-                    } label: {
-                        Label(store.drainCountdownSeconds == nil ? "排水を停止する" : "排水開始をキャンセル", systemImage: "stop.circle.fill")
-                    }
-                    .controlSize(.large)
-                    .disabled(!store.isDraining && store.drainCountdownSeconds == nil)
-                }
+                .disabled(store.isDraining || store.drainCountdownSeconds != nil)
 
                 if let seconds = store.drainCountdownSeconds {
-                    Text("\(seconds)秒後に排水を開始します。移動してから本体を確認してください。")
-                        .foregroundStyle(.orange)
+                    CountdownBanner(seconds: seconds)
                 } else {
-                    Text(store.isDraining ? "排水中です。停止するまで本体から目を離さないでください。" : "認証後はいつでも利用者の操作で排水を開始できます。")
-                        .foregroundStyle(.secondary)
+                    Text(store.isDraining ? copy.drainingWarning : copy.drainIdleText(delaySeconds: store.drainStartDelaySeconds))
+                        .font(.subheadline)
+                        .foregroundStyle(store.isDraining ? Smart8Palette.danger : .secondary)
                 }
+
+                Divider()
+
+                Button {
+                    store.stopDrain()
+                } label: {
+                    Label(store.drainCountdownSeconds == nil ? copy.stopDrain : copy.cancelDrainStart, systemImage: "stop.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(!store.isDraining && store.drainCountdownSeconds == nil)
             }
+            .padding(18)
+            .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Smart8Palette.line)
+            )
+        }
+    }
+}
+
+private struct CountdownBanner: View {
+    let seconds: Int
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(seconds)")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(Smart8Palette.accent)
+                .frame(width: 42)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(copy.drainStartsAfterSuffix)
+                    .font(.headline)
+                Text(copy.moveBeforeDrain)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Smart8Palette.accentSoft.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct DiagnosticsCard: View {
+    @Binding var showingDiagnostics: Bool
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(copy.diagnostics)
+                .font(.headline)
+
+            Button {
+                showingDiagnostics.toggle()
+            } label: {
+                Label(showingDiagnostics ? copy.hideDiagnosticLog : copy.showDiagnosticLog, systemImage: "waveform.path.ecg")
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(14)
+            .background(Smart8Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Smart8Palette.line)
+            )
+        }
+    }
+}
+
+private struct FooterStatusView: View {
+    @ObservedObject var store: Smart7SessionStore
+    @Environment(\.smart8Copy) private var copy
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Circle()
+                .fill(store.errorMessage == nil ? Smart8Palette.green : Smart8Palette.danger)
+                .frame(width: 8, height: 8)
+            Text(store.errorMessage == nil ? copy.allNormal : copy.hasError)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
+    }
+}
+
+private struct StatusPill: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
             .padding(.vertical, 6)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+}
+
+private struct StatusLine: View {
+    let systemImage: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.body)
+            .foregroundStyle(.primary)
+            .labelStyle(CompactLabelStyle(color: color))
+    }
+}
+
+private struct CompactLabelStyle: LabelStyle {
+    let color: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon
+                .foregroundStyle(color)
+                .frame(width: 18)
+            configuration.title
         }
     }
 }
 
 private struct LogPanel: View {
     let logs: [DiagnosticLogEntry]
+    @Environment(\.smart8Copy) private var copy
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("診断ログ")
+            Text(copy.diagnosticLog)
                 .font(.headline)
-                .padding(.top, 18)
-                .padding(.horizontal, 16)
+                .padding(.top, 22)
+                .padding(.horizontal, 18)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -313,7 +833,7 @@ private struct LogPanel: View {
                                 .id(entry.id)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 18)
                     .padding(.bottom, 18)
                 }
                 .onChange(of: logs.last?.id) { _, id in

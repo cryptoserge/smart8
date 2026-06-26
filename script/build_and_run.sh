@@ -27,6 +27,11 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 cp "$ROOT_DIR/Assets/Smart8.icns" "$APP_RESOURCES/Smart8.icns"
+cp "$ROOT_DIR/Assets/HeroDripper.png" "$APP_RESOURCES/HeroDripper.png"
+cp "$ROOT_DIR/Assets/MetricTemperature.png" "$APP_RESOURCES/MetricTemperature.png"
+cp "$ROOT_DIR/Assets/MetricPowder.png" "$APP_RESOURCES/MetricPowder.png"
+cp "$ROOT_DIR/Assets/MetricWater.png" "$APP_RESOURCES/MetricWater.png"
+cp "$ROOT_DIR/Assets/MetricPours.png" "$APP_RESOURCES/MetricPours.png"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
