@@ -20,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct Smart8App: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = Smart7SessionStore()
+    @AppStorage("Smart8.language") private var languageRawValue = Smart8Language.japanese.rawValue
+
+    private var copy: Smart8Copy {
+        Smart8Copy(language: Smart8Language(rawValue: languageRawValue) ?? .japanese)
+    }
 
     var body: some Scene {
         WindowGroup("Smart8") {
@@ -28,7 +33,7 @@ struct Smart8App: App {
         }
         .commands {
             CommandMenu("Smart8") {
-                Button("状態問い合わせ") {
+                Button(copy.requestStatus) {
                     store.requestStatus()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
