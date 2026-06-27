@@ -16,6 +16,22 @@ final class Smart7RecipeTests: XCTestCase {
         ])
     }
 
+    func testBuiltInRecipesIncludeGeneralPurposePresets() {
+        XCTAssertEqual(Smart7Recipe.builtInRecipes.map(\.name), [
+            "香り咲く18g",
+            "標準15g",
+            "しっかり20g",
+            "浅煎りクリア18g",
+            "深煎りまろやか18g"
+        ])
+        XCTAssertEqual(Smart7Recipe.standard15g.totalWaterML, 240)
+        XCTAssertEqual(Smart7Recipe.rich20g.totalWaterML, 320)
+        XCTAssertEqual(Smart7Recipe.lightRoastClear18g.totalWaterML, 300)
+        XCTAssertEqual(Smart7Recipe.darkRoastMellow18g.totalWaterML, 270)
+        XCTAssertTrue(Smart7Recipe.builtInRecipes.allSatisfy { (80...96).contains($0.temperatureCelsius) })
+        XCTAssertTrue(Smart7Recipe.builtInRecipes.allSatisfy { !$0.steps.isEmpty })
+    }
+
     func testRecipeSequenceOrderAndDelays() throws {
         let recipe = Smart7Recipe.kaoriSaku18g
         let sequence = try Smart7Protocol.recipeSequence(

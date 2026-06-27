@@ -6,6 +6,7 @@ final class Smart7SessionStoreTests: XCTestCase {
     private let recipeKey = "Smart8.savedRecipes.v1"
     private let defaultRecipeKey = "Smart8.defaultRecipeID.v1"
     private let drainDelayKey = "Smart8.drainStartDelaySeconds.v1"
+    private let builtInRecipeMigrationKey = "Smart8.builtInRecipesMigrated.v1"
 
     override func setUp() {
         super.setUp()
@@ -60,6 +61,39 @@ final class Smart7SessionStoreTests: XCTestCase {
         XCTAssertTrue(relaunchedStore.isCurrentRecipeDefault)
     }
 
+    func testBuiltInRecipesAreAvailableWhenSavedRecipesExist() throws {
+        let custom = Smart7Recipe(
+            id: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+            name: "保存済みレシピ",
+            temperatureCelsius: 91,
+            coffeeGrams: 17,
+            steps: [Smart7RecipeStep(volumeML: 250, pourSeconds: 40, intervalSeconds: 0)]
+        )
+        let encoded = try JSONEncoder().encode([custom])
+        UserDefaults.standard.set(encoded, forKey: recipeKey)
+
+        let store = Smart7SessionStore()
+
+        XCTAssertTrue(store.savedRecipes.contains { $0.id == custom.id })
+        for builtInRecipe in Smart7Recipe.builtInRecipes {
+            XCTAssertTrue(store.savedRecipes.contains { $0.id == builtInRecipe.id })
+        }
+    }
+
+    func testBuiltInRecipeMigrationDoesNotReAddDeletedRecipe() throws {
+        let encoded = try JSONEncoder().encode(Smart7Recipe.builtInRecipes)
+        UserDefaults.standard.set(encoded, forKey: recipeKey)
+        UserDefaults.standard.set(true, forKey: builtInRecipeMigrationKey)
+
+        let store = Smart7SessionStore()
+        store.selectRecipe(Smart7Recipe.standard15g.id)
+        store.deleteCurrentRecipe()
+
+        let relaunchedStore = Smart7SessionStore()
+
+        XCTAssertFalse(relaunchedStore.savedRecipes.contains { $0.id == Smart7Recipe.standard15g.id })
+    }
+
     func testDrainStartDelayPersistsSelection() {
         let store = Smart7SessionStore()
         store.setDrainStartDelaySeconds(12)
@@ -83,5 +117,6 @@ final class Smart7SessionStoreTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: recipeKey)
         UserDefaults.standard.removeObject(forKey: defaultRecipeKey)
         UserDefaults.standard.removeObject(forKey: drainDelayKey)
+        UserDefaults.standard.removeObject(forKey: builtInRecipeMigrationKey)
     }
 }
