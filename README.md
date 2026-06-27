@@ -32,6 +32,16 @@ swift test
 
 `script/build_and_run.sh` は SwiftPM でビルドし、`dist/Smart8.app` を作成して起動します。
 
+## DMGの作成
+
+```sh
+./script/package_dmg.sh
+```
+
+`dist/Smart8.dmg` を作成します。DMGには `Smart8.app` と `Applications` へのショートカットが入ります。
+
+現時点のDMGは未署名・未notarizationです。別のMacで開く場合、macOSのGatekeeper警告が出る可能性があります。一般配布で警告を減らすには、Developer ID署名とnotarizationを別途行ってください。
+
 ## ドキュメント
 
 - [抽出レシピ仕様書](docs/brewing_recipe_spec_ja.md)
@@ -82,6 +92,16 @@ swift test
 ```
 
 `script/build_and_run.sh` builds the SwiftPM package, creates `dist/Smart8.app`, and launches it.
+
+## Create a DMG
+
+```sh
+./script/package_dmg.sh
+```
+
+This creates `dist/Smart8.dmg`. The DMG contains `Smart8.app` and an `Applications` shortcut.
+
+The current DMG is unsigned and not notarized. macOS Gatekeeper may warn when opening it on another Mac. For broader distribution, sign the app with a Developer ID certificate and notarize it separately.
 
 ## Documentation
 
