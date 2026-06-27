@@ -4,3 +4,4 @@ dist/
 *.xcuserdata/
 Assets/AppIcon-chromakey.png
 Assets/AppIcon.iconset/
+design-audit/

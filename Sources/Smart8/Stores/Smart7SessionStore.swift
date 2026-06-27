@@ -46,6 +46,7 @@ public final class Smart7SessionStore: ObservableObject {
     private static let recipeStorageKey = "Smart8.savedRecipes.v1"
     private static let defaultRecipeStorageKey = "Smart8.defaultRecipeID.v1"
     private static let drainStartDelayStorageKey = "Smart8.drainStartDelaySeconds.v1"
+    private static let builtInRecipeMigrationKey = "Smart8.builtInRecipesMigrated.v1"
     private static let drainStartDelayRange = 0...30
 
     public init() {
@@ -477,9 +478,25 @@ public final class Smart7SessionStore: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: recipeStorageKey),
               let decoded = try? JSONDecoder().decode([Smart7Recipe].self, from: data),
               !decoded.isEmpty else {
-            return [Smart7Recipe.kaoriSaku18g]
+            persistLoadedRecipes(Smart7Recipe.builtInRecipes)
+            UserDefaults.standard.set(true, forKey: builtInRecipeMigrationKey)
+            return Smart7Recipe.builtInRecipes
         }
-        return decoded
+        guard !UserDefaults.standard.bool(forKey: builtInRecipeMigrationKey) else {
+            return decoded
+        }
+        let existingIDs = Set(decoded.map(\.id))
+        let missingBuiltInRecipes = Smart7Recipe.builtInRecipes.filter { !existingIDs.contains($0.id) }
+        let migratedRecipes = decoded + missingBuiltInRecipes
+        persistLoadedRecipes(migratedRecipes)
+        UserDefaults.standard.set(true, forKey: builtInRecipeMigrationKey)
+        return migratedRecipes
+    }
+
+    private static func persistLoadedRecipes(_ recipes: [Smart7Recipe]) {
+        if let data = try? JSONEncoder().encode(recipes) {
+            UserDefaults.standard.set(data, forKey: recipeStorageKey)
+        }
     }
 
     private static func loadDefaultRecipeID() -> UUID? {
