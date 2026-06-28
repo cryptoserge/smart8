@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 
-"$ROOT_DIR/script/build_and_run.sh" --build-only
+SMART8_BUILD_CONFIGURATION=release SMART8_BUILD_ARCHS="arm64 x86_64" "$ROOT_DIR/script/build_and_run.sh" --build-only
 
 rm -rf "$DMG_ROOT"
 rm -f "$DMG_PATH"

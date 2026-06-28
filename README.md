@@ -38,9 +38,9 @@ swift test
 ./script/package_dmg.sh
 ```
 
-`dist/Smart8.dmg` を作成します。DMGには `Smart8.app` と `Applications` へのショートカットが入ります。
+`dist/Smart8.dmg` を作成します。DMGには、Apple Silicon / Intel Mac向けのUniversal release構成でビルドした `Smart8.app` と `Applications` へのショートカットが入ります。
 
-現時点のDMGは未署名・未notarizationです。別のMacで開く場合、macOSのGatekeeper警告が出る可能性があります。一般配布で警告を減らすには、Developer ID署名とnotarizationを別途行ってください。
+現時点のDMGはDeveloper ID未署名・未notarizationです。別のMacで開く場合、macOSのGatekeeper警告が出る可能性があります。一般配布で警告を減らすには、Developer ID署名とnotarizationを別途行ってください。
 
 ## ドキュメント
 
@@ -99,9 +99,9 @@ swift test
 ./script/package_dmg.sh
 ```
 
-This creates `dist/Smart8.dmg`. The DMG contains `Smart8.app` and an `Applications` shortcut.
+This creates `dist/Smart8.dmg`. The DMG contains a Universal release build of `Smart8.app` for Apple Silicon and Intel Macs, plus an `Applications` shortcut.
 
-The current DMG is unsigned and not notarized. macOS Gatekeeper may warn when opening it on another Mac. For broader distribution, sign the app with a Developer ID certificate and notarize it separately.
+The current DMG is not signed with a Developer ID certificate and is not notarized. macOS Gatekeeper may warn when opening it on another Mac. For broader distribution, sign the app with a Developer ID certificate and notarize it separately.
 
 ## Documentation
 
