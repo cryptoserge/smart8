@@ -5,6 +5,8 @@ MODE="${1:-run}"
 APP_NAME="Smart8"
 BUNDLE_ID="com.cryptoserge.smart8"
 MIN_SYSTEM_VERSION="14.0"
+BUILD_CONFIGURATION="${SMART8_BUILD_CONFIGURATION:-debug}"
+BUILD_ARCHS="${SMART8_BUILD_ARCHS:-}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -19,8 +21,25 @@ cd "$ROOT_DIR"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
-swift build
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+SWIFT_BUILD_ARGS=()
+case "$BUILD_CONFIGURATION" in
+  debug)
+    ;;
+  release)
+    SWIFT_BUILD_ARGS=(-c release)
+    ;;
+  *)
+    echo "SMART8_BUILD_CONFIGURATION must be debug or release" >&2
+    exit 2
+    ;;
+esac
+
+for arch in $BUILD_ARCHS; do
+  SWIFT_BUILD_ARGS+=(--arch "$arch")
+done
+
+swift build "${SWIFT_BUILD_ARGS[@]}"
+BUILD_BINARY="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
@@ -57,6 +76,8 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
