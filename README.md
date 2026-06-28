@@ -1,5 +1,7 @@
 # Smart8
 
+Latest release: [Smart8 v0.1.1](https://github.com/cryptoserge/smart8/releases/tag/v0.1.1)
+
 Smart8 は、HARIO Smart7 EVS-70 を Mac から操作するための macOS SwiftUI アプリです。配信終了した Smart7 アプリの代替として、レシピ送信、抽出停止、残水排出を行う最小構成のアプリです。
 
 > Smart8 は非公式の独立プロジェクトです。HARIO による承認、支援、提携を受けたものではありません。
@@ -60,6 +62,8 @@ MIT License です。詳細は [LICENSE](LICENSE) を参照してください。
 ---
 
 # Smart8
+
+Latest release: [Smart8 v0.1.1](https://github.com/cryptoserge/smart8/releases/tag/v0.1.1)
 
 Smart8 is a macOS SwiftUI app for controlling the HARIO Smart7 EVS-70 from a Mac. It is a minimal replacement for the discontinued Smart7 app, focused on recipe transfer, brew stop, and water drain controls.
 
