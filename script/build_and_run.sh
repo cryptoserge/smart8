@@ -38,8 +38,13 @@ for arch in $BUILD_ARCHS; do
   SWIFT_BUILD_ARGS+=(--arch "$arch")
 done
 
-swift build "${SWIFT_BUILD_ARGS[@]}"
-BUILD_BINARY="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
+if [ "${#SWIFT_BUILD_ARGS[@]}" -eq 0 ]; then
+  swift build
+  BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+else
+  swift build "${SWIFT_BUILD_ARGS[@]}"
+  BUILD_BINARY="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
+fi
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
