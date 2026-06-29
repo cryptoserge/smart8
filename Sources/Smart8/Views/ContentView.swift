@@ -46,15 +46,62 @@ struct ContentView: View {
 }
 
 private enum Smart8Palette {
-    static let page = Color(red: 0.925, green: 0.915, blue: 0.890)
-    static let side = Color(red: 0.900, green: 0.890, blue: 0.865)
-    static let surface = Color(red: 0.955, green: 0.950, blue: 0.935)
+    static let page = adaptive(
+        lightRed: 0.925, lightGreen: 0.915, lightBlue: 0.890,
+        darkRed: 0.110, darkGreen: 0.105, darkBlue: 0.095
+    )
+    static let side = adaptive(
+        lightRed: 0.900, lightGreen: 0.890, lightBlue: 0.865,
+        darkRed: 0.145, darkGreen: 0.137, darkBlue: 0.122
+    )
+    static let surface = adaptive(
+        lightRed: 0.955, lightGreen: 0.950, lightBlue: 0.935,
+        darkRed: 0.190, darkGreen: 0.180, darkBlue: 0.160
+    )
     static let line = Color.primary.opacity(0.13)
-    static let accent = Color(red: 0.50, green: 0.39, blue: 0.25)
-    static let accentSoft = Color(red: 0.76, green: 0.68, blue: 0.54)
-    static let blue = Color(red: 0.20, green: 0.36, blue: 0.55)
-    static let green = Color(red: 0.22, green: 0.46, blue: 0.32)
-    static let danger = Color(red: 0.66, green: 0.26, blue: 0.22)
+    static let accent = adaptive(
+        lightRed: 0.50, lightGreen: 0.39, lightBlue: 0.25,
+        darkRed: 0.70, darkGreen: 0.56, darkBlue: 0.36
+    )
+    static let accentSoft = adaptive(
+        lightRed: 0.76, lightGreen: 0.68, lightBlue: 0.54,
+        darkRed: 0.38, darkGreen: 0.32, darkBlue: 0.23
+    )
+    static let blue = adaptive(
+        lightRed: 0.20, lightGreen: 0.36, lightBlue: 0.55,
+        darkRed: 0.50, darkGreen: 0.68, darkBlue: 0.88
+    )
+    static let green = adaptive(
+        lightRed: 0.22, lightGreen: 0.46, lightBlue: 0.32,
+        darkRed: 0.48, darkGreen: 0.76, darkBlue: 0.56
+    )
+    static let danger = adaptive(
+        lightRed: 0.66, lightGreen: 0.26, lightBlue: 0.22,
+        darkRed: 0.94, darkGreen: 0.45, darkBlue: 0.38
+    )
+
+    private static func adaptive(
+        lightRed: Double,
+        lightGreen: Double,
+        lightBlue: Double,
+        darkRed: Double,
+        darkGreen: Double,
+        darkBlue: Double
+    ) -> Color {
+        #if canImport(AppKit)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(
+                calibratedRed: isDark ? darkRed : lightRed,
+                green: isDark ? darkGreen : lightGreen,
+                blue: isDark ? darkBlue : lightBlue,
+                alpha: 1
+            )
+        })
+        #else
+        Color(red: lightRed, green: lightGreen, blue: lightBlue)
+        #endif
+    }
 }
 
 private struct HeaderView: View {
